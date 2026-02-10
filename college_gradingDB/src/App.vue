@@ -15,7 +15,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { supabase } from './supabase'
+import { supabase } from './components/supabase'
 import AppHeader from './components/AppHeader.vue'
 import LoginView from './views/LoginView.vue'
 import AdminDashboard from './views/AdminDashboard.vue'
