@@ -30,7 +30,7 @@
                 <th class="text-center">Action</th>
               </tr>
             </thead>
-            <tbody>
+              <tbody>
               <tr v-for="student in section.students" :key="student.studentId">
                 <td class="font-mono text-sm text-blue-800">{{ student.studentId }}</td>
                 <td class="font-medium">{{ student.firstName }} {{ student.lastName }}</td>
@@ -46,8 +46,11 @@
                   />
                 </td>
                 <td class="text-center">
-                  <button @click="saveGrade(student, section.sectionId)" class="btn-save">
-                    Update
+                  <button 
+                    class="btn-save"
+                    @click="saveGrade(student.studentId, section.sectionid, student.currentGrade)"
+                  >
+                    Save
                   </button>
                 </td>
               </tr>
@@ -74,28 +77,27 @@ const loading = ref(true)
 const fetchFacultyData = async () => {
   loading.value = true
   try {
-    // 1. Get current user
     const { data: { user } } = await supabase.auth.getUser()
 
-    // 2. Get the Faculty ID linked to the Profile
+    // 1. Get Faculty using profileid (lowercase)
     const { data: faculty, error: facError } = await supabase
       .from('FacultyMember')
-      .select('facultyId')
-      .eq('profileId', user.id)
+      .select('facultyid') 
+      .eq('profileid', user.id)
       .single()
 
     if (facError) throw facError
 
     if (faculty) {
-      // 3. Get Sections for this Faculty
+      // 2. Get Sections using facultyid (lowercase)
       const { data: sectionData, error: secError } = await supabase
         .from('Section')
         .select('*')
-        .eq('facultyId', faculty.facultyId)
+        .eq('facultyid', faculty.facultyid)
 
       if (secError) throw secError
 
-      // 4. Get Students for each section via GradeRecord
+      // 3. Get Students using lowercase attributes
       const enrichedSections = await Promise.all(
         sectionData.map(async (sec) => {
           const { data: gradeRecords, error: gradeError } = await supabase
@@ -103,27 +105,25 @@ const fetchFacultyData = async () => {
             .select(`
               grade,
               Student (
-                studentId,
-                studentFname,
-                studentLname
+                studentid,
+                studentfname,
+                studentlname
               )
             `)
-            .eq('sectionId', sec.sectionId)
+            .eq('sectionid', sec.sectionid)
 
           if (gradeError) throw gradeError
 
-          // Map the Supabase join result to a flat object
           const students = gradeRecords.map(record => ({
-            studentId: record.Student.studentId,
-            firstName: record.Student.studentFname,
-            lastName: record.Student.studentLname,
+            studentId: record.Student.studentid,
+            firstName: record.Student.studentfname,
+            lastName: record.Student.studentlname,
             currentGrade: record.grade
           }))
 
           return { ...sec, students }
         })
       )
-
       sections.value = enrichedSections
     }
   } catch (err) {
@@ -133,18 +133,31 @@ const fetchFacultyData = async () => {
   }
 }
 
-const saveGrade = async (student, sectionId) => {
+const saveGrade = async (studentId, sectionId, newGrade) => {
   try {
-    const { error } = await supabase
+    // 1. Convert to number to match 'numeric' data type in DB
+    const gradeValue = parseFloat(newGrade)
+  
+    const { data, error } = await supabase
       .from('GradeRecord')
-      .update({ grade: student.currentGrade })
-      .eq('studentId', student.studentId)
-      .eq('sectionId', sectionId)
+      .update({ grade: gradeValue }) 
+      .eq('studentid', studentId)
+      .eq('sectionid', sectionId)
+      .select() // This allows us to verify the change immediately
 
     if (error) throw error
-    alert(`Grade updated for ${student.firstName}!`)
+
+    // 2. Check if any rows were actually updated
+    if (!data || data.length === 0) {
+      alert('Update failed: No record found or permission denied (RLS).')
+      return
+    }
+    
+    alert('Grade updated successfully!')
+    await fetchFacultyData() 
   } catch (err) {
-    alert('Error updating grade: ' + err.message)
+    console.error('Error updating grade:', err.message)
+    alert('Update failed: ' + err.message)
   }
 }
 

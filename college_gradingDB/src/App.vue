@@ -10,7 +10,7 @@
     <LoginView v-if="!user" @login-success="fetchUser" />
 
     <div v-else class="dashboard-layout">
-      <AppHeader :profile="profile" />
+      <AppHeader :profile="profile" @logout="handleLogout" />
       
       <main class="content">
         <AdminDashboard v-if="profile?.role === 'admin'" />
@@ -30,22 +30,43 @@ import FacultyDashboard from './views/FacultyDashboard.vue'
 
 const user = ref(null)
 const profile = ref(null)
-const appLoading = ref(true) // 1. ADD THIS REF
+const appLoading = ref(true)
+
+
+const handleLogout = async () => {
+  try {
+    const { error } = await supabase.auth.signOut()
+    if (error) throw error
+    
+    // Reset states so the UI switches back to LoginView
+    user.value = null
+    profile.value = null
+  } catch (err) {
+    alert('Error logging out: ' + err.message)
+  }
+}
 
 const fetchUser = async () => {
-  appLoading.value = true // 2. SET TO TRUE AT START
-  const { data } = await supabase.auth.getUser()
-  user.value = data.user
+  appLoading.value = true 
+  const { data: authData } = await supabase.auth.getUser()
   
-  if (data.user) {
-    const { data: p } = await supabase
+  if (authData?.user) {
+    user.value = authData.user
+    
+    // Use the exact casing from your working SQL query
+    const { data: p, error } = await supabase
       .from('Profiles')
-      .select('*')
-      .eq('id', data.user.id)
-      .single()
-    profile.value = p
+      .select('id, email, full_name, role') // Ensure these match your DB columns
+      .eq('id', authData.user.id)
+      .single();
+    
+    if (!error) {
+      profile.value = p
+    } else {
+      console.error("Profile fetch error:", error.message)
+    }
   }
-  appLoading.value = false // 3. SET TO FALSE AT END
+  appLoading.value = false
 }
 
 onMounted(fetchUser)
