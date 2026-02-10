@@ -44,7 +44,7 @@
 
 <script setup>
 import { ref } from 'vue'
-import { supabase } from '../supabase'
+import { supabase } from '../../supabase'
 
 const emit = defineEmits(['login-success'])
 const email = ref('')
