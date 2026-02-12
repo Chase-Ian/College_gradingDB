@@ -21,7 +21,7 @@
         />
       </div>
 
-      -->
+    
       <div class="section-filter min-w-[200px]">
         <select v-model="selectedSection" class="search-input !pl-4">
           <option value="">All Sections</option>
