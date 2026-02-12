@@ -10,7 +10,7 @@
       <input 
         v-model="searchQuery" 
         type="text" 
-        placeholder="Search students across all sections..." 
+        placeholder="Search For a Student..." 
         class="search-input"
       />
     </div>
