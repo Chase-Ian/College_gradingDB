@@ -128,7 +128,6 @@ const filteredStudents = computed(() => {
     let modifier = sortOrder.value === 'asc' ? 1 : -1
     let valA = a[sortKey.value]
     let valB = b[sortKey.value]
-    
     if (valA < valB) return -1 * modifier
     if (valA > valB) return 1 * modifier
     return 0
@@ -140,8 +139,6 @@ const filteredStudents = computed(() => {
 const fetchAllStudents = async () => {
   loading.value = true
   try {
-    // FIX: Fetching from Student table to enable section filtering
-    // Then joining student_race_eligibility view for calculations
     const { data, error } = await supabase
       .from('Student')
       .select(`
@@ -188,7 +185,6 @@ const fetchAllStudents = async () => {
 
 const saveAdminGrade = async (studentId, sectionId, newGrade) => {
   try {
-    // Update the actual GradeRecord table (not the view)
     const { error } = await supabase
       .from('GradeRecord')
       .update({ grade: parseFloat(newGrade) })
