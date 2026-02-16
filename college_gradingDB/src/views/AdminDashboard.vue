@@ -3,7 +3,7 @@
     <div class="flex justify-between items-center mb-6">
       <div>
         <h2 class="text-2xl font-bold text-[#1e3a8a]">Master Student List</h2>
-        <p class="text-gray-500">Registrar View: Accessing Records & Race Eligibility</p>
+        <p class="text-gray-500">Registrar View: Records & Race Eligibility</p>
       </div>
       <button @click="exportToPDF" :disabled="loading" class="btn-primary">
         {{ loading ? 'Processing...' : 'Export PDF Report' }}
@@ -35,27 +35,27 @@
       <table class="w-full text-sm">
         <thead class="bg-[#1e3a8a] text-white">
           <tr class="cursor-pointer">
-            <th @click="toggleSort('studentId')" class="p-4 text-left hover:bg-blue-800 transition">
+            <th @click="toggleSort('studentId')" class="p-4 text-left">
               ID {{ sortKey === 'studentId' ? (sortOrder === 'asc' ? '↑' : '↓') : '' }}
             </th>
-            <th @click="toggleSort('fullName')" class="p-4 text-left hover:bg-blue-800 transition">
+            <th @click="toggleSort('fullName')" class="p-4 text-left">
               Full Name {{ sortKey === 'fullName' ? (sortOrder === 'asc' ? '↑' : '↓') : '' }}
             </th>
             <th class="p-4 text-left">Program</th>
-            <th @click="toggleSort('currentGrade')" class="p-4 text-left hover:bg-blue-800 transition">
+            <th @click="toggleSort('currentGrade')" class="p-4 text-left">
               Grade {{ sortKey === 'currentGrade' ? (sortOrder === 'asc' ? '↑' : '↓') : '' }}
             </th>
-            <th @click="toggleSort('eligibility')" class="p-4 text-left hover:bg-blue-800 transition">
+            <th @click="toggleSort('eligibility')" class="p-4 text-left">
               Eligibility {{ sortKey === 'eligibility' ? (sortOrder === 'asc' ? '↑' : '↓') : '' }}
             </th>
             <th class="p-4 text-left">Grades per Section</th>
           </tr>
         </thead>
         <tbody class="bg-white">
-          <tr v-for="student in filteredStudents" :key="student.studentId" class="border-b hover:bg-blue-50 transition">
+          <tr v-for="student in filteredStudents" :key="student.studentId" class="border-b hover:bg-blue-50">
             <td class="p-4 font-mono text-blue-700 font-bold">{{ student.studentId }}</td>
             <td class="p-4 font-semibold text-gray-800">{{ student.fullName }}</td>
-            <td class="p-4">{{ student.courseName }}</td>
+            <td class="p-4">{{ student.courseName }} - Yr {{ student.yearLevel }}</td>
             <td class="p-4 font-bold">{{ student.currentGrade }}</td>
             <td class="p-4">
               <span 
@@ -73,11 +73,9 @@
               </div>
             </td>
           </tr>
-          <tr v-if="filteredStudents.length === 0 && !loading">
-            <td colspan="6" class="p-10 text-center text-gray-400">No records found. Check console for errors.</td>
-          </tr>
         </tbody>
       </table>
+      <div v-if="filteredStudents.length === 0 && !loading" class="p-10 text-center text-gray-400">No records found.</div>
       <div v-if="loading" class="p-10 text-center text-gray-500">Loading master records...</div>
     </div>
   </div>
@@ -126,70 +124,53 @@ const filteredStudents = computed(() => {
 
   result.sort((a, b) => {
     let modifier = sortOrder.value === 'asc' ? 1 : -1
-    let valA = a[sortKey.value]
-    let valB = b[sortKey.value]
-    if (valA < valB) return -1 * modifier
-    if (valA > valB) return 1 * modifier
+    if (a[sortKey.value] < b[sortKey.value]) return -1 * modifier
+    if (a[sortKey.value] > b[sortKey.value]) return 1 * modifier
     return 0
   })
-
   return result
 })
 
 const fetchAllStudents = async () => {
   loading.value = true
   try {
-    // REVISED QUERY: We simplify the select to ensure it doesn't fail if a join is missing
-    const { data, error } = await supabase
+    // 1. Fetch Students, Programs, and Grades (This part worked in your old code)
+    const { data: studentData, error: sError } = await supabase
       .from('Student')
       .select(`
-        studentid, 
-        studentfname, 
-        studentlname, 
-        yearlevel,
-        Program!left (programname),
-        GradeRecord!left (
-          grade,
-          sectionid,
-          Section!left (sectionname)
-        ),
-        student_race_eligibility!left (
-          grade,
-          eligible_races
-        )
+        studentid, studentfname, studentlname, yearlevel,
+        Program (programname),
+        GradeRecord (grade, sectionid, Section (sectionname))
       `)
     
-    if (error) {
-        console.error("Supabase Select Error:", error)
-        throw error
-    }
+    if (sError) throw sError
 
-    if (!data || data.length === 0) {
-        console.warn("No data returned from Supabase")
-        students.value = []
-        return
-    }
+    // 2. Fetch Eligibility separately to avoid the "Join" error
+    const { data: eligibilityData, error: eError } = await supabase
+      .from('student_race_eligibility')
+      .select('studentid, grade, eligible_races')
 
-    students.value = data.map(s => {
-      // Handle the case where the view data might be missing
-      const viewData = (s.student_race_eligibility && s.student_race_eligibility[0]) ? s.student_race_eligibility[0] : {}
-      
+    if (eError) throw eError
+
+    // 3. Combine the data manually
+    students.value = studentData.map(s => {
+      const eligibility = eligibilityData.find(e => e.studentid === s.studentid) || {}
       return {
-        studentId: s.studentid || 'N/A',
-        fullName: `${s.studentfname || ''} ${s.studentlname || ''}`.trim() || 'Unknown Student',
+        studentId: s.studentid,
+        fullName: `${s.studentfname} ${s.studentlname}`,
         courseName: s.Program?.programname || 'N/A',
-        yearLevel: s.yearlevel || 0,
-        currentGrade: viewData.grade || 0,
-        eligibility: viewData.eligible_races || 'Pending',
-        grades: s.GradeRecord ? s.GradeRecord.map(g => ({
+        yearLevel: s.yearlevel,
+        currentGrade: eligibility.grade || 0,
+        eligibility: eligibility.eligible_races || 'OP Only',
+        grades: s.GradeRecord.map(g => ({
           sectionid: g.sectionid,
           sectionname: g.Section?.sectionname || 'Unknown',
           grade: g.grade
-        })) : []
+        }))
       }
     })
   } catch (err) {
-    console.error("Full Fetch Error:", err)
+    console.error("Fetch Error:", err.message)
   } finally {
     loading.value = false
   }
@@ -202,10 +183,9 @@ const saveAdminGrade = async (studentId, sectionId, newGrade) => {
       .update({ grade: parseFloat(newGrade) })
       .eq('studentid', studentId)
       .eq('sectionid', sectionId)
-
     if (error) throw error
     alert('Grade updated successfully')
-    await fetchAllStudents() 
+    await fetchAllStudents()
   } catch (err) {
     alert('Update failed: ' + err.message)
   }
@@ -214,26 +194,16 @@ const saveAdminGrade = async (studentId, sectionId, newGrade) => {
 const exportToPDF = () => {
   try {
     const doc = new jsPDF()
-    doc.setFontSize(16)
-    doc.text('APC Master Student Grade & Race Eligibility Report', 14, 20)
-    
     const tableRows = filteredStudents.value.map(s => [
-      s.studentId, 
-      s.fullName, 
-      s.currentGrade,
-      s.eligibility,
+      s.studentId, s.fullName, s.currentGrade, s.eligibility,
       s.grades.map(g => `${g.sectionname}: ${g.grade ?? 'N/A'}`).join(', ')
     ])
-
     autoTable(doc, {
       startY: 30,
       head: [['ID', 'Name', 'Avg Grade', 'Eligibility', 'Grades']],
-      body: tableRows,
-      styles: { fontSize: 7 },
-      columnStyles: { 4: { cellWidth: 50 } }
+      body: tableRows
     })
-
-    doc.save(`Eligibility_Report_${new Date().toISOString().split('T')[0]}.pdf`)
+    doc.save(`Master_Report.pdf`)
   } catch (err) {
     alert("PDF Error: " + err.message)
   }
@@ -246,9 +216,7 @@ onMounted(fetchAllStudents)
 .input-wrapper { position: relative; }
 .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8; }
 .search-input { width: 100%; padding: 10px 10px 10px 40px; border: 1px solid #e2e8f0; border-radius: 8px; outline: none; }
-.search-input:focus { border-color: #1e3a8a; box-shadow: 0 0 0 2px rgba(30, 58, 138, 0.1); }
-.admin-grade-input { width: 50px; font-size: 10px; padding: 2px; border: 1px solid #cbd5e1; border-radius: 4px; text-align: center; }
-.btn-mini { background: #1e3a8a; color: white; font-size: 9px; padding: 3px 6px; border-radius: 4px; border: none; cursor: pointer; }
+.admin-grade-input { width: 60px; font-size: 11px; padding: 2px; border: 1px solid #cbd5e1; border-radius: 4px; text-align: center; }
+.btn-mini { background: #1e3a8a; color: white; font-size: 10px; padding: 4px 8px; border-radius: 4px; border: none; cursor: pointer; }
 .btn-primary { background-color: #1e3a8a; color: white; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; border: none; }
-.btn-primary:disabled { background-color: #94a3b8; }
 </style>
