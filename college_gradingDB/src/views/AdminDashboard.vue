@@ -74,7 +74,7 @@
             </td>
           </tr>
           <tr v-if="filteredStudents.length === 0 && !loading">
-            <td colspan="6" class="p-10 text-center text-gray-400">No records found.</td>
+            <td colspan="6" class="p-10 text-center text-gray-400">No records found for current filters.</td>
           </tr>
         </tbody>
       </table>
@@ -126,8 +126,11 @@ const filteredStudents = computed(() => {
 
   result.sort((a, b) => {
     let modifier = sortOrder.value === 'asc' ? 1 : -1
-    if (a[sortKey.value] < b[sortKey.value]) return -1 * modifier
-    if (a[sortKey.value] > b[sortKey.value]) return 1 * modifier
+    let valA = a[sortKey.value]
+    let valB = b[sortKey.value]
+    
+    if (valA < valB) return -1 * modifier
+    if (valA > valB) return 1 * modifier
     return 0
   })
 
@@ -137,7 +140,8 @@ const filteredStudents = computed(() => {
 const fetchAllStudents = async () => {
   loading.value = true
   try {
-    // UPDATED FETCH: Anchoring on 'Student' to keep section filter working
+    // FIX: Fetching from Student table to enable section filtering
+    // Then joining student_race_eligibility view for calculations
     const { data, error } = await supabase
       .from('Student')
       .select(`
@@ -160,14 +164,14 @@ const fetchAllStudents = async () => {
     if (error) throw error
 
     students.value = data.map(s => {
-      const viewData = s.student_race_eligibility?.[0] || {}
+      const eligibilityInfo = s.student_race_eligibility?.[0] || {}
       return {
         studentId: s.studentid,
         fullName: `${s.studentfname} ${s.studentlname}`,
         courseName: s.Program?.programname || 'N/A',
         yearLevel: s.yearlevel,
-        currentGrade: viewData.grade || 0,
-        eligibility: viewData.eligible_races || 'OP Only',
+        currentGrade: eligibilityInfo.grade || 0,
+        eligibility: eligibilityInfo.eligible_races || 'OP Only',
         grades: s.GradeRecord ? s.GradeRecord.map(g => ({
           sectionid: g.sectionid,
           sectionname: g.Section?.sectionname || 'Unknown',
@@ -184,7 +188,7 @@ const fetchAllStudents = async () => {
 
 const saveAdminGrade = async (studentId, sectionId, newGrade) => {
   try {
-    // CORRECTED UPDATE: Pointing to GradeRecord (real table)
+    // Update the actual GradeRecord table (not the view)
     const { error } = await supabase
       .from('GradeRecord')
       .update({ grade: parseFloat(newGrade) })
