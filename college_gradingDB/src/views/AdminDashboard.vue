@@ -74,7 +74,7 @@
             </td>
           </tr>
           <tr v-if="filteredStudents.length === 0 && !loading">
-            <td colspan="6" class="p-10 text-center text-gray-400">No records found for current filters.</td>
+            <td colspan="6" class="p-10 text-center text-gray-400">No records found. Check console for errors.</td>
           </tr>
         </tbody>
       </table>
@@ -139,6 +139,7 @@ const filteredStudents = computed(() => {
 const fetchAllStudents = async () => {
   loading.value = true
   try {
+    // REVISED QUERY: We simplify the select to ensure it doesn't fail if a join is missing
     const { data, error } = await supabase
       .from('Student')
       .select(`
@@ -146,29 +147,40 @@ const fetchAllStudents = async () => {
         studentfname, 
         studentlname, 
         yearlevel,
-        Program (programname),
-        GradeRecord (
+        Program!left (programname),
+        GradeRecord!left (
           grade,
           sectionid,
-          Section (sectionname)
+          Section!left (sectionname)
         ),
-        student_race_eligibility (
+        student_race_eligibility!left (
           grade,
           eligible_races
         )
       `)
     
-    if (error) throw error
+    if (error) {
+        console.error("Supabase Select Error:", error)
+        throw error
+    }
+
+    if (!data || data.length === 0) {
+        console.warn("No data returned from Supabase")
+        students.value = []
+        return
+    }
 
     students.value = data.map(s => {
-      const eligibilityInfo = s.student_race_eligibility?.[0] || {}
+      // Handle the case where the view data might be missing
+      const viewData = (s.student_race_eligibility && s.student_race_eligibility[0]) ? s.student_race_eligibility[0] : {}
+      
       return {
-        studentId: s.studentid,
-        fullName: `${s.studentfname} ${s.studentlname}`,
+        studentId: s.studentid || 'N/A',
+        fullName: `${s.studentfname || ''} ${s.studentlname || ''}`.trim() || 'Unknown Student',
         courseName: s.Program?.programname || 'N/A',
-        yearLevel: s.yearlevel,
-        currentGrade: eligibilityInfo.grade || 0,
-        eligibility: eligibilityInfo.eligible_races || 'OP Only',
+        yearLevel: s.yearlevel || 0,
+        currentGrade: viewData.grade || 0,
+        eligibility: viewData.eligible_races || 'Pending',
         grades: s.GradeRecord ? s.GradeRecord.map(g => ({
           sectionid: g.sectionid,
           sectionname: g.Section?.sectionname || 'Unknown',
@@ -177,7 +189,7 @@ const fetchAllStudents = async () => {
       }
     })
   } catch (err) {
-    console.error("Admin Fetch Error:", err.message)
+    console.error("Full Fetch Error:", err)
   } finally {
     loading.value = false
   }
