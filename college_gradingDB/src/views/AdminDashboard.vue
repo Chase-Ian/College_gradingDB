@@ -35,24 +35,24 @@
       <table class="w-full text-sm">
         <thead class="bg-[#1e3a8a] text-white">
           <tr class="cursor-pointer">
-            <th @click="toggleSort('studentId')" class="p-4 text-left">
+            <th @click="toggleSort('studentId')" class="p-4 text-left hover:bg-blue-800 transition">
               ID {{ sortKey === 'studentId' ? (sortOrder === 'asc' ? '↑' : '↓') : '' }}
             </th>
-            <th @click="toggleSort('fullName')" class="p-4 text-left">
-              Full Name {{ sortKey === 'fullName' ? (sortOrder === 'asc' ? '↑' : '↓') : '' }}
+            <th @click="toggleSort('fullName')" class="p-4 text-left hover:bg-blue-800 transition">
+              FULL NAME {{ sortKey === 'fullName' ? (sortOrder === 'asc' ? '↑' : '↓') : '' }}
             </th>
-            <th class="p-4 text-left">Program</th>
-            <th @click="toggleSort('currentGrade')" class="p-4 text-left">
-              Grade {{ sortKey === 'currentGrade' ? (sortOrder === 'asc' ? '↑' : '↓') : '' }}
+            <th class="p-4 text-left">PROGRAM</th>
+            <th @click="toggleSort('currentGrade')" class="p-4 text-left hover:bg-blue-800 transition">
+              GRADE {{ sortKey === 'currentGrade' ? (sortOrder === 'asc' ? '↑' : '↓') : '' }}
             </th>
-            <th @click="toggleSort('eligibility')" class="p-4 text-left">
-              Eligibility {{ sortKey === 'eligibility' ? (sortOrder === 'asc' ? '↑' : '↓') : '' }}
+            <th @click="toggleSort('eligibility')" class="p-4 text-left hover:bg-blue-800 transition">
+              ELIGIBILITY {{ sortKey === 'eligibility' ? (sortOrder === 'asc' ? '↑' : '↓') : '' }}
             </th>
-            <th class="p-4 text-left">Grades per Section</th>
+            <th class="p-4 text-left">GRADES PER SECTION</th>
           </tr>
         </thead>
         <tbody class="bg-white">
-          <tr v-for="student in filteredStudents" :key="student.studentId" class="border-b hover:bg-blue-50">
+          <tr v-for="student in filteredStudents" :key="student.studentId" class="border-b hover:bg-blue-50 transition">
             <td class="p-4 font-mono text-blue-700 font-bold">{{ student.studentId }}</td>
             <td class="p-4 font-semibold text-gray-800">{{ student.fullName }}</td>
             <td class="p-4">{{ student.courseName }} - Yr {{ student.yearLevel }}</td>
@@ -60,7 +60,7 @@
             <td class="p-4">
               <span 
                 class="px-2 py-1 rounded-full text-[10px] font-bold"
-                :class="student.eligibility === 'OP Only' ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'"
+                :class="student.eligibility.includes('G') ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'"
               >
                 {{ student.eligibility }}
               </span>
@@ -124,8 +124,10 @@ const filteredStudents = computed(() => {
 
   result.sort((a, b) => {
     let modifier = sortOrder.value === 'asc' ? 1 : -1
-    if (a[sortKey.value] < b[sortKey.value]) return -1 * modifier
-    if (a[sortKey.value] > b[sortKey.value]) return 1 * modifier
+    let valA = a[sortKey.value]
+    let valB = b[sortKey.value]
+    if (valA < valB) return -1 * modifier
+    if (valA > valB) return 1 * modifier
     return 0
   })
   return result
@@ -134,7 +136,7 @@ const filteredStudents = computed(() => {
 const fetchAllStudents = async () => {
   loading.value = true
   try {
-    // 1. Fetch Students, Programs, and Grades (This part worked in your old code)
+    // 1. Fetch Students and Grades (The stable query from your old code)
     const { data: studentData, error: sError } = await supabase
       .from('Student')
       .select(`
@@ -145,14 +147,14 @@ const fetchAllStudents = async () => {
     
     if (sError) throw sError
 
-    // 2. Fetch Eligibility separately to avoid the "Join" error
+    // 2. Fetch Eligibility labels from the View separately
     const { data: eligibilityData, error: eError } = await supabase
       .from('student_race_eligibility')
       .select('studentid, grade, eligible_races')
 
     if (eError) throw eError
 
-    // 3. Combine the data manually
+    // 3. Merge the two lists locally in the browser
     students.value = studentData.map(s => {
       const eligibility = eligibilityData.find(e => e.studentid === s.studentid) || {}
       return {
@@ -160,7 +162,7 @@ const fetchAllStudents = async () => {
         fullName: `${s.studentfname} ${s.studentlname}`,
         courseName: s.Program?.programname || 'N/A',
         yearLevel: s.yearlevel,
-        currentGrade: eligibility.grade || 0,
+        currentGrade: eligibility.grade ?? 0,
         eligibility: eligibility.eligible_races || 'OP Only',
         grades: s.GradeRecord.map(g => ({
           sectionid: g.sectionid,
@@ -194,6 +196,7 @@ const saveAdminGrade = async (studentId, sectionId, newGrade) => {
 const exportToPDF = () => {
   try {
     const doc = new jsPDF()
+    doc.text('APC Master Student Grade Report', 14, 20)
     const tableRows = filteredStudents.value.map(s => [
       s.studentId, s.fullName, s.currentGrade, s.eligibility,
       s.grades.map(g => `${g.sectionname}: ${g.grade ?? 'N/A'}`).join(', ')
@@ -201,9 +204,10 @@ const exportToPDF = () => {
     autoTable(doc, {
       startY: 30,
       head: [['ID', 'Name', 'Avg Grade', 'Eligibility', 'Grades']],
-      body: tableRows
+      body: tableRows,
+      styles: { fontSize: 7 }
     })
-    doc.save(`Master_Report.pdf`)
+    doc.save(`Master_Report_${new Date().toISOString().split('T')[0]}.pdf`)
   } catch (err) {
     alert("PDF Error: " + err.message)
   }
@@ -216,7 +220,8 @@ onMounted(fetchAllStudents)
 .input-wrapper { position: relative; }
 .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8; }
 .search-input { width: 100%; padding: 10px 10px 10px 40px; border: 1px solid #e2e8f0; border-radius: 8px; outline: none; }
-.admin-grade-input { width: 60px; font-size: 11px; padding: 2px; border: 1px solid #cbd5e1; border-radius: 4px; text-align: center; }
-.btn-mini { background: #1e3a8a; color: white; font-size: 10px; padding: 4px 8px; border-radius: 4px; border: none; cursor: pointer; }
+.search-input:focus { border-color: #1e3a8a; box-shadow: 0 0 0 2px rgba(30, 58, 138, 0.1); }
+.admin-grade-input { width: 50px; font-size: 10px; padding: 2px; border: 1px solid #cbd5e1; border-radius: 4px; text-align: center; }
+.btn-mini { background: #1e3a8a; color: white; font-size: 9px; padding: 3px 6px; border-radius: 4px; border: none; cursor: pointer; }
 .btn-primary { background-color: #1e3a8a; color: white; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; border: none; }
 </style>
