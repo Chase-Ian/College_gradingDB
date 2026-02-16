@@ -38,6 +38,7 @@
                 <th>Student ID</th>
                 <th>Full Name</th>
                 <th class="text-center">Current Grade</th>
+                <th class="text-center">Eligibility</th>
                 <th class="text-center">Action</th>
               </tr>
             </thead>
@@ -60,9 +61,12 @@
                   />
                 </td>
                 <td class="text-center">
+                  {{ getEligibility(student.currentGrade) }}
+                </td>
+                <td class="text-center">
                   <button 
                     class="btn-save"
-                    @click="saveGrade(student.studentId, section.sectionid, student.currentGrade)"
+                    @click="saveGrade(student.studentId, section.sectionid, student.currentGrade, student.lastName)"
                   >
                     Save
                   </button>
@@ -139,9 +143,18 @@ const fetchFacultyData = async () => {
   }
 }
 
-const saveGrade = async (studentId, sectionId, newGrade) => {
+const getEligibility = (grade) => {
+  if (grade >= 4.00) return "G1, G2, G3, OP"
+  if (grade >= 3.50) return "G2, G3, OP"
+  if (grade >= 3.00) return "G3, OP"
+  return "OP Only"
+}
+
+const saveGrade = async (studentId, sectionId, newGrade, studentlname) => {
   try {
     const gradeValue = parseFloat(newGrade)
+
+    // Update grade
     const { data, error } = await supabase
       .from('GradeRecord')
       .update({ grade: gradeValue }) 
@@ -154,9 +167,22 @@ const saveGrade = async (studentId, sectionId, newGrade) => {
       alert('Update failed: No record found or permission denied (RLS).')
       return
     }
-    
-    alert('Grade updated successfully!')
-    await fetchFacultyData() 
+
+    // Compute eligibility
+    const eligibility = getEligibility(gradeValue)
+
+    // Upsert eligibility record
+    await supabase
+      .from('student_race_eligibility')
+      .upsert({
+        studentid: studentId,
+        sectionid: sectionId,
+        studentlname,
+        eligibility
+      })
+
+    alert('Grade and eligibility updated successfully!')
+    await fetchFacultyData()
   } catch (err) {
     console.error('Error updating grade:', err.message)
     alert('Update failed: ' + err.message)
