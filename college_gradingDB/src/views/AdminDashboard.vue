@@ -56,7 +56,7 @@
             <td class="p-4 font-mono text-blue-700 font-bold">{{ student.studentId }}</td>
             <td class="p-4 font-semibold text-gray-800">{{ student.fullName }}</td>
             <td class="p-4">{{ student.courseName }}</td>
-            <td class="p-4 font-bold">{{ student.currentGrade.toFixed(2) }}</td>
+            <td class="p-4 font-bold">{{ student.currentGrade }}</td>
             <td class="p-4">
               <span 
                 class="px-2 py-1 rounded-full text-[10px] font-bold"
@@ -94,8 +94,6 @@ const students = ref([])
 const loading = ref(true)
 const searchQuery = ref('')
 const selectedSection = ref('')
-
-/* NEW: Sorting State */
 const sortKey = ref('studentId')
 const sortOrder = ref('asc')
 
@@ -116,7 +114,6 @@ const availableSections = computed(() => {
   return Array.from(sectionSet).sort()
 })
 
-/* MODIFIED: Dual Filtering + NEW Multi-column Sorting logic */
 const filteredStudents = computed(() => {
   const query = searchQuery.value.toLowerCase().trim()
   const section = selectedSection.value
@@ -127,7 +124,6 @@ const filteredStudents = computed(() => {
     return matchesSearch && matchesSection
   })
 
-  // NEW: Sorting Logic
   result.sort((a, b) => {
     let modifier = sortOrder.value === 'asc' ? 1 : -1
     if (a[sortKey.value] < b[sortKey.value]) return -1 * modifier
@@ -138,32 +134,47 @@ const filteredStudents = computed(() => {
   return result
 })
 
-/* NEW: Fetching from the Database View 'student_race_eligibility' */
 const fetchAllStudents = async () => {
   loading.value = true
   try {
+    // UPDATED FETCH: Anchoring on 'Student' to keep section filter working
     const { data, error } = await supabase
-      .from('student_race_eligibility')
+      .from('Student')
       .select(`
-        studentid, studentfname, studentlname, yearlevel, programname, current_grade, eligibility,
-        GradeRecord (grade, sectionid, Section (sectionname))
+        studentid, 
+        studentfname, 
+        studentlname, 
+        yearlevel,
+        Program (programname),
+        GradeRecord (
+          grade,
+          sectionid,
+          Section (sectionname)
+        ),
+        student_race_eligibility (
+          grade,
+          eligible_races
+        )
       `)
     
     if (error) throw error
 
-    students.value = data.map(s => ({
-      studentId: s.studentid,
-      fullName: `${s.studentfname} ${s.studentlname}`,
-      courseName: s.programname || 'N/A',
-      yearLevel: s.yearlevel,
-      currentGrade: s.current_grade || 0,
-      eligibility: s.eligibility || 'Pending',
-      grades: s.GradeRecord ? s.GradeRecord.map(g => ({
-        sectionid: g.sectionid,
-        sectionname: g.Section?.sectionname || 'Unknown',
-        grade: g.grade
-      })) : []
-    }))
+    students.value = data.map(s => {
+      const viewData = s.student_race_eligibility?.[0] || {}
+      return {
+        studentId: s.studentid,
+        fullName: `${s.studentfname} ${s.studentlname}`,
+        courseName: s.Program?.programname || 'N/A',
+        yearLevel: s.yearlevel,
+        currentGrade: viewData.grade || 0,
+        eligibility: viewData.eligible_races || 'OP Only',
+        grades: s.GradeRecord ? s.GradeRecord.map(g => ({
+          sectionid: g.sectionid,
+          sectionname: g.Section?.sectionname || 'Unknown',
+          grade: g.grade
+        })) : []
+      }
+    })
   } catch (err) {
     console.error("Admin Fetch Error:", err.message)
   } finally {
@@ -173,19 +184,21 @@ const fetchAllStudents = async () => {
 
 const saveAdminGrade = async (studentId, sectionId, newGrade) => {
   try {
+    // CORRECTED UPDATE: Pointing to GradeRecord (real table)
     const { error } = await supabase
       .from('GradeRecord')
       .update({ grade: parseFloat(newGrade) })
       .eq('studentid', studentId)
       .eq('sectionid', sectionId)
+
     if (error) throw error
     alert('Grade updated successfully')
+    await fetchAllStudents() 
   } catch (err) {
     alert('Update failed: ' + err.message)
   }
 }
 
-/* NEW: PDF Export now includes Avg Grade and Race Eligibility */
 const exportToPDF = () => {
   try {
     const doc = new jsPDF()
@@ -195,7 +208,7 @@ const exportToPDF = () => {
     const tableRows = filteredStudents.value.map(s => [
       s.studentId, 
       s.fullName, 
-      s.currentGrade.toFixed(2),
+      s.currentGrade,
       s.eligibility,
       s.grades.map(g => `${g.sectionname}: ${g.grade ?? 'N/A'}`).join(', ')
     ])
