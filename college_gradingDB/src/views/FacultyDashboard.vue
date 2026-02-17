@@ -5,17 +5,28 @@
       <p class="text-gray-500">Managing students assigned to your sections</p>
     </div>
 
+    <!-- 🔹 Global Search Bar -->
+    <div class="mb-6">
+      <input 
+        v-model="searchQuery" 
+        type="text" 
+        placeholder="Search For a Student..." 
+        class="search-input"
+      />
+    </div>
+
     <div v-if="loading" class="text-center p-10">
       <div class="logo-box mb-2 inline-block animate-pulse">RAMS</div>
       <p class="text-gray-500">Fetching your class list...</p>
     </div>
 
-    <div v-else-if="sections.length > 0">
-      <div v-for="section in sections" :key="section.sectionId" class="mb-8">
+    <!-- 🔹 Show filtered students globally -->
+    <div v-else-if="filteredSections.length > 0">
+      <div v-for="section in filteredSections" :key="section.sectionid" class="mb-8">
         <div class="flex items-center justify-between mb-4 bg-white p-4 rounded-lg shadow-sm border-l-4 border-blue-900">
           <div>
-            <h3 class="text-lg font-bold text-blue-900">{{ section.sectionName }}</h3>
-            <p class="text-sm text-gray-500">{{ section.courseId }} | Semester: {{ section.semester }} | AY: {{ section.academicYear }}</p>
+            <h3 class="text-lg font-bold text-blue-900">{{ section.sectionname }}</h3>
+            <p class="text-sm text-gray-500">{{ section.courseid }} | Semester: {{ section.semester }} | AY: {{ section.academicyear }}</p>
           </div>
           <span class="badge badge-faculty">Total Students: {{ section.students.length }}</span>
         </div>
@@ -24,14 +35,18 @@
           <table>
             <thead>
               <tr>
-                <th>Student ID</th>
-                <th>Full Name</th>
-                <th class="text-center">Current Grade</th>
+                <th @click="sortBy('studentId')">Student ID ⬍</th>
+                <th @click="sortBy('fullName')">Full Name ⬍</th>
+                <th class="text-center" @click="sortBy('currentGrade')">Current Grade ⬍</th>
+                <th class="text-center" @click="sortBy('eligibility')">Eligibility ⬍</th>
                 <th class="text-center">Action</th>
               </tr>
             </thead>
-              <tbody>
-              <tr v-for="student in section.students" :key="student.studentId">
+            <tbody>
+              <tr 
+                v-for="student in sortedStudents(section.students)" 
+                :key="student.studentId"
+              >
                 <td class="font-mono text-sm text-blue-800">{{ student.studentId }}</td>
                 <td class="font-medium">{{ student.firstName }} {{ student.lastName }}</td>
                 <td class="text-center">
@@ -46,9 +61,12 @@
                   />
                 </td>
                 <td class="text-center">
+                  {{ getEligibility(student.currentGrade) }}
+                </td>
+                <td class="text-center">
                   <button 
                     class="btn-save"
-                    @click="saveGrade(student.studentId, section.sectionid, student.currentGrade)"
+                    @click="saveGrade(student.studentId, section.sectionid, student.currentGrade, student.lastName)"
                   >
                     Save
                   </button>
@@ -61,46 +79,42 @@
     </div>
 
     <div v-else class="bg-white p-10 rounded-xl text-center border border-dashed border-gray-300">
-      <p class="text-gray-500 text-lg">No sections assigned to your faculty account.</p>
-      <p class="text-sm">Please contact the Registrar if this is an error.</p>
+      <p class="text-gray-500 text-lg">No students found.</p>
+      <p class="text-sm">Try adjusting your search or contact the Registrar if this is an error.</p>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { supabase } from '../supabase'
 
 const sections = ref([])
 const loading = ref(true)
+const searchQuery = ref("")
+const sortKey = ref(null)
+const sortOrder = ref(1) // 1 = ascending, -1 = descending
 
 const fetchFacultyData = async () => {
   loading.value = true
   try {
     const { data: { user } } = await supabase.auth.getUser()
 
-    // 1. Get Faculty using profileid (lowercase)
-    const { data: faculty, error: facError } = await supabase
+    const { data: faculty } = await supabase
       .from('FacultyMember')
       .select('facultyid') 
       .eq('profileid', user.id)
       .single()
 
-    if (facError) throw facError
-
     if (faculty) {
-      // 2. Get Sections using facultyid (lowercase)
-      const { data: sectionData, error: secError } = await supabase
+      const { data: sectionData } = await supabase
         .from('Section')
         .select('*')
         .eq('facultyid', faculty.facultyid)
 
-      if (secError) throw secError
-
-      // 3. Get Students using lowercase attributes
       const enrichedSections = await Promise.all(
         sectionData.map(async (sec) => {
-          const { data: gradeRecords, error: gradeError } = await supabase
+          const { data: gradeRecords } = await supabase
             .from('GradeRecord')
             .select(`
               grade,
@@ -112,13 +126,13 @@ const fetchFacultyData = async () => {
             `)
             .eq('sectionid', sec.sectionid)
 
-          if (gradeError) throw gradeError
-
           const students = gradeRecords.map(record => ({
             studentId: record.Student.studentid,
             firstName: record.Student.studentfname,
             lastName: record.Student.studentlname,
-            currentGrade: record.grade
+            currentGrade: record.grade,
+            fullName: `${record.Student.studentfname} ${record.Student.studentlname}`,
+            eligibility: getEligibility(record.grade)
           }))
 
           return { ...sec, students }
@@ -133,70 +147,83 @@ const fetchFacultyData = async () => {
   }
 }
 
-const saveGrade = async (studentId, sectionId, newGrade) => {
+const getEligibility = (grade) => {
+  if (grade >= 4.00) return "G1, G2, G3, OP"
+  if (grade >= 3.50) return "G2, G3, OP"
+  if (grade >= 3.00) return "G3, OP"
+  return "OP Only"
+}
+
+const saveGrade = async (studentId, sectionId, newGrade, studentlname) => {
   try {
-    // 1. Convert to number to match 'numeric' data type in DB
     const gradeValue = parseFloat(newGrade)
-  
+
     const { data, error } = await supabase
       .from('GradeRecord')
       .update({ grade: gradeValue }) 
       .eq('studentid', studentId)
       .eq('sectionid', sectionId)
-      .select() // This allows us to verify the change immediately
+      .select()
 
     if (error) throw error
-
-    // 2. Check if any rows were actually updated
     if (!data || data.length === 0) {
       alert('Update failed: No record found or permission denied (RLS).')
       return
     }
-    
-    alert('Grade updated successfully!')
-    await fetchFacultyData() 
+
+    const eligibility = getEligibility(gradeValue)
+
+    await supabase
+      .from('student_race_eligibility')
+      .upsert({
+        studentid: studentId,
+        sectionid: sectionId,
+        studentlname,
+        eligibility
+      })
+
+    alert('Grade and eligibility updated successfully!')
+    await fetchFacultyData()
   } catch (err) {
     console.error('Error updating grade:', err.message)
     alert('Update failed: ' + err.message)
   }
 }
 
+// 🔹 Sorting logic
+const sortBy = (key) => {
+  if (sortKey.value === key) {
+    sortOrder.value = -sortOrder.value // toggle
+  } else {
+    sortKey.value = key
+    sortOrder.value = 1
+  }
+}
+
+const sortedStudents = (students) => {
+  if (!sortKey.value) return students
+  return [...students].sort((a, b) => {
+    let valA = a[sortKey.value]
+    let valB = b[sortKey.value]
+    if (typeof valA === 'string') valA = valA.toLowerCase()
+    if (typeof valB === 'string') valB = valB.toLowerCase()
+    if (valA < valB) return -1 * sortOrder.value
+    if (valA > valB) return 1 * sortOrder.value
+    return 0
+  })
+}
+
+// 🔹 Computed property for global filtering
+const filteredSections = computed(() => {
+  if (!searchQuery.value) return sections.value
+  const query = searchQuery.value.toLowerCase()
+  return sections.value.map(sec => ({
+    ...sec,
+    students: sec.students.filter(s => 
+      `${s.firstName} ${s.lastName}`.toLowerCase().includes(query)
+    )
+  })).filter(sec => sec.students.length > 0)
+})
+
 onMounted(fetchFacultyData)
 </script>
-
-<style scoped>
-.grade-input {
-  width: 80px;
-  padding: 6px;
-  border: 1px solid #d1d5db;
-  border-radius: 4px;
-  text-align: center;
-  font-weight: bold;
-  color: #1e3a8a;
-}
-
-.grade-input:focus {
-  outline: 2px solid #3b82f6;
-  border-color: transparent;
-}
-
-.btn-save {
-  background-color: #10b981;
-  color: white;
-  padding: 6px 16px;
-  border-radius: 6px;
-  border: none;
-  font-size: 0.8rem;
-  font-weight: 600;
-  transition: background 0.2s;
-  cursor: pointer;
-}
-
-.btn-save:hover {
-  background-color: #059669;
-}
-
-.text-center {
-  text-align: center;
-}
-</style>

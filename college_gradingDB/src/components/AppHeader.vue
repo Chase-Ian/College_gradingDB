@@ -2,9 +2,9 @@
   <header class="header-main">
     <div class="header-container">
       <div class="header-brand">
-        <div class="logo-box">RAMS</div>
+        <div class="logo-box">UMA</div>
         <div class="brand-text">
-          <h1 class="school-name">Asia Pacific College</h1>
+          <h1 class="school-name">Tracen Academy</h1>
           <p class="portal-tag">Academic Management System</p>
         </div>
       </div>
@@ -74,7 +74,7 @@ const handleLogout = async () => {
 }
 
 .logo-box {
-  background: #1e3a8a;
+  background: #6b21a8; /* purple */
   color: white;
   font-weight: 800;
   padding: 8px 12px;
@@ -134,7 +134,6 @@ const handleLogout = async () => {
   background: #fee2e2;
   color: #dc2626;
 }
-
 
 .badge {
   padding: 4px 10px;
