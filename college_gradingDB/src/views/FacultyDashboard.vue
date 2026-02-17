@@ -35,16 +35,16 @@
           <table>
             <thead>
               <tr>
-                <th>Student ID</th>
-                <th>Full Name</th>
-                <th class="text-center">Current Grade</th>
-                <th class="text-center">Eligibility</th>
+                <th @click="sortBy('studentId')">Student ID ⬍</th>
+                <th @click="sortBy('fullName')">Full Name ⬍</th>
+                <th class="text-center" @click="sortBy('currentGrade')">Current Grade ⬍</th>
+                <th class="text-center" @click="sortBy('eligibility')">Eligibility ⬍</th>
                 <th class="text-center">Action</th>
               </tr>
             </thead>
             <tbody>
               <tr 
-                v-for="student in section.students" 
+                v-for="student in sortedStudents(section.students)" 
                 :key="student.studentId"
               >
                 <td class="font-mono text-sm text-blue-800">{{ student.studentId }}</td>
@@ -92,6 +92,8 @@ import { supabase } from '../supabase'
 const sections = ref([])
 const loading = ref(true)
 const searchQuery = ref("")
+const sortKey = ref(null)
+const sortOrder = ref(1) // 1 = ascending, -1 = descending
 
 const fetchFacultyData = async () => {
   loading.value = true
@@ -128,7 +130,9 @@ const fetchFacultyData = async () => {
             studentId: record.Student.studentid,
             firstName: record.Student.studentfname,
             lastName: record.Student.studentlname,
-            currentGrade: record.grade
+            currentGrade: record.grade,
+            fullName: `${record.Student.studentfname} ${record.Student.studentlname}`,
+            eligibility: getEligibility(record.grade)
           }))
 
           return { ...sec, students }
@@ -154,7 +158,6 @@ const saveGrade = async (studentId, sectionId, newGrade, studentlname) => {
   try {
     const gradeValue = parseFloat(newGrade)
 
-    // Update grade
     const { data, error } = await supabase
       .from('GradeRecord')
       .update({ grade: gradeValue }) 
@@ -168,10 +171,8 @@ const saveGrade = async (studentId, sectionId, newGrade, studentlname) => {
       return
     }
 
-    // Compute eligibility
     const eligibility = getEligibility(gradeValue)
 
-    // Upsert eligibility record
     await supabase
       .from('student_race_eligibility')
       .upsert({
@@ -189,6 +190,29 @@ const saveGrade = async (studentId, sectionId, newGrade, studentlname) => {
   }
 }
 
+// 🔹 Sorting logic
+const sortBy = (key) => {
+  if (sortKey.value === key) {
+    sortOrder.value = -sortOrder.value // toggle
+  } else {
+    sortKey.value = key
+    sortOrder.value = 1
+  }
+}
+
+const sortedStudents = (students) => {
+  if (!sortKey.value) return students
+  return [...students].sort((a, b) => {
+    let valA = a[sortKey.value]
+    let valB = b[sortKey.value]
+    if (typeof valA === 'string') valA = valA.toLowerCase()
+    if (typeof valB === 'string') valB = valB.toLowerCase()
+    if (valA < valB) return -1 * sortOrder.value
+    if (valA > valB) return 1 * sortOrder.value
+    return 0
+  })
+}
+
 // 🔹 Computed property for global filtering
 const filteredSections = computed(() => {
   if (!searchQuery.value) return sections.value
@@ -203,53 +227,3 @@ const filteredSections = computed(() => {
 
 onMounted(fetchFacultyData)
 </script>
-
-<style scoped>
-.search-input {
-  width: 100%;
-  padding: 10px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 1rem;
-  margin-bottom: 10px;
-}
-.search-input:focus {
-  outline: 2px solid #3b82f6;
-  border-color: transparent;
-}
-
-.grade-input {
-  width: 80px;
-  padding: 6px;
-  border: 1px solid #d1d5db;
-  border-radius: 4px;
-  text-align: center;
-  font-weight: bold;
-  color: #1e3a8a;
-}
-
-.grade-input:focus {
-  outline: 2px solid #3b82f6;
-  border-color: transparent;
-}
-
-.btn-save {
-  background-color: #10b981;
-  color: white;
-  padding: 6px 16px;
-  border-radius: 6px;
-  border: none;
-  font-size: 0.8rem;
-  font-weight: 600;
-  transition: background 0.2s;
-  cursor: pointer;
-}
-
-.btn-save:hover {
-  background-color: #059669;
-}
-
-.text-center {
-  text-align: center;
-}
-</style>
