@@ -2,13 +2,13 @@
   <div class="min-h-screen flex items-center justify-center bg-gray-100 px-4">
     <div class="max-w-md w-full bg-white rounded-xl shadow-lg p-8">
       <div class="text-center mb-8">
-        <h2 class="text-3xl font-bold text-blue-900">RAMS</h2>
-        <p class="text-gray-600">Registrar & Academic Management System</p>
+        <h2 class="text-3xl font-bold text-blue-900">UMA</h2>
+        <p class="text-gray-600">Tracen Academy Registrar & Grade Management System</p>
       </div>
 
       <form @submit.prevent="handleLogin" class="space-y-6">
         <div>
-          <label class="block text-sm font-medium text-gray-700">APC Email</label>
+          <label class="block text-sm font-medium text-gray-700">UMA Email</label>
           <input 
             v-model="email" 
             type="email" 
